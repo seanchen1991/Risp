@@ -174,6 +174,30 @@ fn default_env<'a>() -> RispEnv<'a> {
     );
 
     data.insert(
+        "max".to_string(),
+        RispExp::Func(
+            |args: &[RispExp]| -> Result<RispExp, RispErr> {
+                let floats = parse_list_of_floats(args)?;
+                let first = *floats.first().ok_or(RispErr::Reason("Max expects at least one number".to_string()))?;
+                let max = floats.iter().fold(first, |acc, curr| acc.max(*curr));
+                Ok(RispExp::Number(max))
+            }
+        )
+    );
+
+    data.insert(
+        "min".to_string(),
+        RispExp::Func(
+            |args: &[RispExp]| -> Result<RispExp, RispErr> {
+                let floats = parse_list_of_floats(args)?;
+                let first = *floats.first().ok_or(RispErr::Reason("Min expects at least one number".to_string()))?;
+                let min = floats.iter().fold(first, |acc, curr| acc.min(*curr));
+                Ok(RispExp::Number(min))
+            }
+        )
+    );
+
+    data.insert(
         "=".to_string(),
         RispExp::Func(ensure_tonicity!(|a, b| a == b))
     );
@@ -316,7 +340,7 @@ fn eval_built_in_form(exp: &RispExp, arg_forms: &[RispExp], env: &mut RispEnv) -
             match s.as_ref() {
                 "if" => Some(eval_if_args(arg_forms, env)),
                 "def" => Some(eval_def_args(arg_forms, env)),
-                "fn" => Some(eval_lambda_args(arg_forms)),
+                "lambda" => Some(eval_lambda_args(arg_forms)),
                 _ => None,
             }
         },
@@ -382,7 +406,7 @@ fn eval_lambda_args(arg_forms: &[RispExp]) -> Result<RispExp, RispErr> {
 
     if arg_forms.len() > 2 {
         return Err(
-            RispErr::Reason("fn definition can only have two forms".to_string())
+            RispErr::Reason("lambda definition can only have two forms".to_string())
         )
     }
 
