@@ -4,6 +4,8 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::num::ParseFloatError;
 
+static PROMPT: &str = "risp >";
+
 #[derive(Clone)]
 enum RispExp {
     Bool(bool),
@@ -157,6 +159,16 @@ fn default_env<'a>() -> RispEnv<'a> {
                 let first = *floats.first().ok_or(RispErr::Reason("Expected at least one number".to_string()))?;
                 let sum_of_rest = floats[1..].iter().fold(0.0, |sum, a| sum + a);
                 Ok(RispExp::Number(first - sum_of_rest))
+            }
+        )
+    );
+
+    data.insert(
+        "*".to_string(),
+        RispExp::Func(
+            |args: &[RispExp]| -> Result<RispExp, RispErr> {
+                let product = parse_list_of_floats(args)?.iter().fold(1.0, |prod, a| prod * a);
+                Ok(RispExp::Number(product))
             }
         )
     );
@@ -389,20 +401,18 @@ fn parse_eval(expr: String, env: &mut RispEnv) -> Result<RispExp, RispErr> {
     Ok(evaluated_exp)
 }
 
-fn slurp_expr() -> String {
-    let mut expr = String::new();
-
-    io::stdin().read_line(&mut expr).expect("failed to read line");
-
-    expr
-}
-
 fn main() {
     let env = &mut default_env();
 
     loop {
-        println!("risp >");
-        let expr = slurp_expr();
+        println!("{}", PROMPT);
+        let mut expr = String::new();
+    
+        io::stdin().read_line(&mut expr).expect("failed to read line");
+
+        if expr.trim() == "quit" {
+            break;
+        }
 
         match parse_eval(expr, env) {
             Ok(res) => println!("> {}", res),
