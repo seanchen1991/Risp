@@ -158,6 +158,7 @@ fn default_env<'a>() -> RispEnv<'a> {
                 let floats = parse_list_of_floats(args)?;
                 let first = *floats.first().ok_or(RispErr::Reason("Expected at least one number".to_string()))?;
                 let sum_of_rest = floats[1..].iter().fold(0.0, |sum, a| sum + a);
+
                 Ok(RispExp::Number(first - sum_of_rest))
             }
         )
@@ -174,12 +175,28 @@ fn default_env<'a>() -> RispEnv<'a> {
     );
 
     data.insert(
+        "/".to_string(),
+        RispExp::Func(
+            |args: &[RispExp]| -> Result<RispExp, RispErr> {
+                let floats = parse_list_of_floats(args)?;
+                let first = *floats.first().ok_or(RispErr::Reason("Expected at least one number".to_string()))?;
+                let result = floats[1..].iter()
+                    .filter(|x| **x != 0.0)
+                    .fold(first, |num, div| num / div);
+
+                Ok(RispExp::Number(result))
+            }
+        ) 
+    );
+
+    data.insert(
         "max".to_string(),
         RispExp::Func(
             |args: &[RispExp]| -> Result<RispExp, RispErr> {
                 let floats = parse_list_of_floats(args)?;
                 let first = *floats.first().ok_or(RispErr::Reason("max expects at least one number".to_string()))?;
                 let max = floats.iter().fold(first, |acc, curr| acc.max(*curr));
+
                 Ok(RispExp::Number(max))
             }
         )
@@ -192,6 +209,7 @@ fn default_env<'a>() -> RispEnv<'a> {
                 let floats = parse_list_of_floats(args)?;
                 let first = *floats.first().ok_or(RispErr::Reason("min expects at least one number".to_string()))?;
                 let min = floats.iter().fold(first, |acc, curr| acc.min(*curr));
+
                 Ok(RispExp::Number(min))
             }
         )
@@ -210,6 +228,24 @@ fn default_env<'a>() -> RispEnv<'a> {
                 Ok(RispExp::Number(float[0].abs()))
             }
         ) 
+    );
+
+    data.insert(
+        "expt".to_string(),
+        RispExp::Func(
+            |args: &[RispExp]| -> Result<RispExp, RispErr> {
+                let floats = parse_list_of_floats(args)?;
+
+                if floats.len() != 2 {
+                    return Err(RispErr::Reason("expt expects exactly two numbers".to_string()));
+                }
+
+                let operand = floats.first().unwrap();
+                let exponent = floats.last().unwrap();
+
+                Ok(RispExp::Number(operand.powf(*exponent)))
+            }
+        )
     );
 
     data.insert(
