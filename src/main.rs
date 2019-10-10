@@ -178,7 +178,7 @@ fn default_env<'a>() -> RispEnv<'a> {
         RispExp::Func(
             |args: &[RispExp]| -> Result<RispExp, RispErr> {
                 let floats = parse_list_of_floats(args)?;
-                let first = *floats.first().ok_or(RispErr::Reason("Max expects at least one number".to_string()))?;
+                let first = *floats.first().ok_or(RispErr::Reason("max expects at least one number".to_string()))?;
                 let max = floats.iter().fold(first, |acc, curr| acc.max(*curr));
                 Ok(RispExp::Number(max))
             }
@@ -190,11 +190,26 @@ fn default_env<'a>() -> RispEnv<'a> {
         RispExp::Func(
             |args: &[RispExp]| -> Result<RispExp, RispErr> {
                 let floats = parse_list_of_floats(args)?;
-                let first = *floats.first().ok_or(RispErr::Reason("Min expects at least one number".to_string()))?;
+                let first = *floats.first().ok_or(RispErr::Reason("min expects at least one number".to_string()))?;
                 let min = floats.iter().fold(first, |acc, curr| acc.min(*curr));
                 Ok(RispExp::Number(min))
             }
         )
+    );
+
+    data.insert(
+        "abs".to_string(),
+        RispExp::Func(
+            |arg: &[RispExp]| -> Result<RispExp, RispErr> {
+                let float = parse_list_of_floats(arg)?; 
+
+                if float.len() > 1 {
+                    return Err(RispErr::Reason("abs expects a single number".to_string()));
+                }
+
+                Ok(RispExp::Number(float[0].abs()))
+            }
+        ) 
     );
 
     data.insert(
