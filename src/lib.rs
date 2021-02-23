@@ -2,9 +2,6 @@ use std::io;
 use std::fmt;
 use std::rc::Rc;
 use std::collections::HashMap;
-use std::num::ParseFloatError;
-
-static PROMPT: &str = "risp >";
 
 #[derive(Clone)]
 enum Expression {
@@ -53,9 +50,166 @@ impl fmt::Display for RispErr {
 }
 
 #[derive(Clone)]
-struct Env<'a> {
+pub struct Env<'a> {
     operations: HashMap<String, Expression>,
     outer: Option<&'a Env<'a>>,
+}
+
+impl Default for Env {
+    fn default() -> Self {
+        let mut operations: HashMap<String, Expression> = HashMap::new();
+
+        operations.insert(
+            "+".to_string(),
+            Expression::Func(
+                |args: &[Expression]| -> Result<Expression, RispErr> {
+                    let sum = parse_list_of_floats(args)?.iter().sum();
+
+                    Ok(Expression::Number(sum))
+                }
+            )
+        );
+
+        operations.insert(
+            "-".to_string(),
+            Expression::Func(
+                |args: &[Expression]| -> Result<Expression, RispErr> {
+                    let floats = parse_list_of_floats(args)?;
+                    let (first, rest) = floats.split_first().ok_or(RispErr::Reason("Expected at least one number".to_string()))?;
+                    let sum_of_rest: f64 = rest.iter().sum();
+
+                    Ok(Expression::Number(first - sum_of_rest))
+                }
+            )
+        );
+
+        operations.insert(
+            "*".to_string(),
+            Expression::Func(
+                |args: &[Expression]| -> Result<Expression, RispErr> {
+                    let product = parse_list_of_floats(args)?.iter().product();
+
+                    Ok(Expression::Number(product))
+                }
+            )
+        );
+
+        operations.insert(
+            "/".to_string(),
+            Expression::Func(
+                |args: &[Expression]| -> Result<Expression, RispErr> {
+                    let floats = parse_list_of_floats(args)?;
+                    let first = *floats.first().ok_or(RispErr::Reason("Expected at least one number".to_string()))?;
+                    let result = floats[1..].iter()
+                        .filter(|x| **x != 0.0)
+                        .fold(first, |num, div| num / div);
+
+                    Ok(Expression::Number(result))
+                }
+            ) 
+        );
+
+        operations.insert(
+            "max".to_string(),
+            Expression::Func(
+                |args: &[Expression]| -> Result<Expression, RispErr> {
+                    let floats = parse_list_of_floats(args)?;
+                    let first = *floats.first().ok_or(RispErr::Reason("max expects at least one number".to_string()))?;
+                    let max = floats.iter().fold(first, |acc, curr| acc.max(*curr));
+
+                    Ok(Expression::Number(max))
+                }
+            )
+        );
+
+        operations.insert(
+            "min".to_string(),
+            Expression::Func(
+                |args: &[Expression]| -> Result<Expression, RispErr> {
+                    let floats = parse_list_of_floats(args)?;
+                    let first = *floats.first().ok_or(RispErr::Reason("min expects at least one number".to_string()))?;
+                    let min = floats.iter().fold(first, |acc, curr| acc.min(*curr));
+
+                    Ok(Expression::Number(min))
+                }
+            )
+        );
+
+        operations.insert(
+            "abs".to_string(),
+            Expression::Func(
+                |arg: &[Expression]| -> Result<Expression, RispErr> {
+                    let float = parse_list_of_floats(arg)?; 
+
+                    if float.len() > 1 {
+                        return Err(RispErr::Reason("abs expects a single number".to_string()));
+                    }
+
+                    Ok(Expression::Number(float[0].abs()))
+                }
+            ) 
+        );
+
+        operations.insert(
+            "expt".to_string(),
+            Expression::Func(
+                |args: &[Expression]| -> Result<Expression, RispErr> {
+                    let floats = parse_list_of_floats(args)?;
+
+                    if floats.len() != 2 {
+                        return Err(RispErr::Reason("expt expects exactly two numbers".to_string()));
+                    }
+
+                    let operand = floats.first().unwrap();
+                    let exponent = floats.last().unwrap();
+
+                    Ok(Expression::Number(operand.powf(*exponent)))
+                }
+            )
+        );
+
+        operations.insert(
+            "round".to_string(),
+            Expression::Func(
+                |arg: &[Expression]| -> Result<Expression, RispErr> {
+                    let float = parse_list_of_floats(arg)?; 
+
+                    if float.len() > 1 {
+                        return Err(RispErr::Reason("round expects a single number".to_string()));
+                    }
+
+                    Ok(Expression::Number(float[0].round()))
+                }
+            )  
+        );
+
+        operations.insert(
+            "=".to_string(),
+            Expression::Func(ensure_tonicity!(|a, b| a == b))
+        );
+
+        operations.insert(
+            ">".to_string(),
+            Expression::Func(ensure_tonicity!(|a, b| a > b))
+        );
+
+        operations.insert(
+            "<".to_string(),
+            Expression::Func(ensure_tonicity!(|a, b| a < b))
+        );
+
+        operations.insert(
+            ">=".to_string(),
+            Expression::Func(ensure_tonicity!(|a, b| a >= b))
+        );
+
+        operations.insert(
+            "<=".to_string(),
+            Expression::Func(ensure_tonicity!(|a, b| a <= b))
+        );
+
+        Env { operations, outer: None }
+    }
 }
 
 macro_rules! ensure_tonicity {
@@ -134,161 +288,6 @@ fn parse_atom(token: &str) -> Expression {
             }
         }
     }
-}
-
-fn init_env<'a>() -> Env<'a> {
-    let mut operations: HashMap<String, Expression> = HashMap::new();
-
-    operations.insert(
-        "+".to_string(),
-        Expression::Func(
-            |args: &[Expression]| -> Result<Expression, RispErr> {
-                let sum = parse_list_of_floats(args)?.iter().sum();
-
-                Ok(Expression::Number(sum))
-            }
-        )
-    );
-
-    operations.insert(
-        "-".to_string(),
-        Expression::Func(
-            |args: &[Expression]| -> Result<Expression, RispErr> {
-                let floats = parse_list_of_floats(args)?;
-                let (first, rest) = floats.split_first().ok_or(RispErr::Reason("Expected at least one number".to_string()))?;
-                let sum_of_rest: f64 = rest.iter().sum();
-
-                Ok(Expression::Number(first - sum_of_rest))
-            }
-        )
-    );
-
-    operations.insert(
-        "*".to_string(),
-        Expression::Func(
-            |args: &[Expression]| -> Result<Expression, RispErr> {
-                let product = parse_list_of_floats(args)?.iter().product();
-
-                Ok(Expression::Number(product))
-            }
-        )
-    );
-
-    operations.insert(
-        "/".to_string(),
-        Expression::Func(
-            |args: &[Expression]| -> Result<Expression, RispErr> {
-                let floats = parse_list_of_floats(args)?;
-                let first = *floats.first().ok_or(RispErr::Reason("Expected at least one number".to_string()))?;
-                let result = floats[1..].iter()
-                    .filter(|x| **x != 0.0)
-                    .fold(first, |num, div| num / div);
-
-                Ok(Expression::Number(result))
-            }
-        ) 
-    );
-
-    operations.insert(
-        "max".to_string(),
-        Expression::Func(
-            |args: &[Expression]| -> Result<Expression, RispErr> {
-                let floats = parse_list_of_floats(args)?;
-                let first = *floats.first().ok_or(RispErr::Reason("max expects at least one number".to_string()))?;
-                let max = floats.iter().fold(first, |acc, curr| acc.max(*curr));
-
-                Ok(Expression::Number(max))
-            }
-        )
-    );
-
-    operations.insert(
-        "min".to_string(),
-        Expression::Func(
-            |args: &[Expression]| -> Result<Expression, RispErr> {
-                let floats = parse_list_of_floats(args)?;
-                let first = *floats.first().ok_or(RispErr::Reason("min expects at least one number".to_string()))?;
-                let min = floats.iter().fold(first, |acc, curr| acc.min(*curr));
-
-                Ok(Expression::Number(min))
-            }
-        )
-    );
-
-    operations.insert(
-        "abs".to_string(),
-        Expression::Func(
-            |arg: &[Expression]| -> Result<Expression, RispErr> {
-                let float = parse_list_of_floats(arg)?; 
-
-                if float.len() > 1 {
-                    return Err(RispErr::Reason("abs expects a single number".to_string()));
-                }
-
-                Ok(Expression::Number(float[0].abs()))
-            }
-        ) 
-    );
-
-    operations.insert(
-        "expt".to_string(),
-        Expression::Func(
-            |args: &[Expression]| -> Result<Expression, RispErr> {
-                let floats = parse_list_of_floats(args)?;
-
-                if floats.len() != 2 {
-                    return Err(RispErr::Reason("expt expects exactly two numbers".to_string()));
-                }
-
-                let operand = floats.first().unwrap();
-                let exponent = floats.last().unwrap();
-
-                Ok(Expression::Number(operand.powf(*exponent)))
-            }
-        )
-    );
-
-    operations.insert(
-        "round".to_string(),
-        Expression::Func(
-            |arg: &[Expression]| -> Result<Expression, RispErr> {
-                let float = parse_list_of_floats(arg)?; 
-
-                if float.len() > 1 {
-                    return Err(RispErr::Reason("round expects a single number".to_string()));
-                }
-
-                Ok(Expression::Number(float[0].round()))
-            }
-        )  
-    );
-
-    operations.insert(
-        "=".to_string(),
-        Expression::Func(ensure_tonicity!(|a, b| a == b))
-    );
-
-    operations.insert(
-        ">".to_string(),
-        Expression::Func(ensure_tonicity!(|a, b| a > b))
-    );
-
-    operations.insert(
-        "<".to_string(),
-        Expression::Func(ensure_tonicity!(|a, b| a < b))
-    );
-
-    operations.insert(
-        ">=".to_string(),
-        Expression::Func(ensure_tonicity!(|a, b| a >= b))
-    );
-
-    operations.insert(
-        "<=".to_string(),
-        Expression::Func(ensure_tonicity!(|a, b| a <= b))
-    );
-
-    Env { operations, outer: None }
 }
 
 fn parse_list_of_floats(args: &[Expression]) -> Result<Vec<f64>, RispErr> {
@@ -489,26 +488,4 @@ fn parse_eval(expr: String, env: &mut Env) -> Result<Expression, RispErr> {
     let evaluated_exp = eval(&parsed_exp, env)?;
 
     Ok(evaluated_exp)
-}
-
-fn main() {
-    let env = &mut init_env();
-
-    loop {
-        println!("{}", PROMPT);
-        let mut expr = String::new();
-    
-        io::stdin().read_line(&mut expr).expect("failed to read line");
-
-        if expr.trim() == "quit" {
-            break;
-        }
-
-        match parse_eval(expr, env) {
-            Ok(res) => println!("> {}", res),
-            Err(e) => match e {
-                RispErr::Reason(msg) => println!("> Error: {}", msg),
-            }
-        }
-    }
 }
